@@ -41,11 +41,13 @@ class Author():
         Note:
         It's assumed that the function is used within a larger framework where the input arguments are prepared and provided.
         """
-        N_MAX = 1
+        N_MAX = 2
 
         script_directory = os.path.dirname(os.path.abspath(__file__))
         self.path_templates = os.path.join(script_directory, 'templates')
         self.path_basic_templates = os.path.join(script_directory, 'basic_templates')
+        self.model_generation_file = 'model_generation.py'
+        self.model_generation_file = os.path.join(script_directory,self.model_generation_file)
         self.model_name = model_name
         self.runs =  runs
         self.sort_runs()
@@ -66,8 +68,13 @@ class Author():
         self.defaults = self.get_defaults()
         self.merge_parameters()
         lines, WARNINGS = self.full_model()
-        open(os.path.join(self.path_templates, model_name), 'w').write(re.sub(r" +", " ", "\n".join(lines)))
-
+        model_file = model_name+'.py'
+        model_path = os.path.join(self.path_templates, model_file)
+        if not os.path.exists(model_path) or not os.path.exists(self.model_generation_file):
+            self.add_model_generation_file(model_name=model_name)
+            open(os.path.join(self.path_templates, '__init__.py'),'a').write(f"\nfrom . import  {model_name}")
+        open(model_path, 'w').write(re.sub(r" +", " ", "\n".join(lines)))
+        
     def sort_runs(self):
         """
         Sorts the 'runs' list based on their dependencies.
@@ -160,10 +167,11 @@ class Author():
         """
 
         for model_id, model in self.models.items():
-            if model['template'] in os.listdir(self.path_basic_templates):
-                path = os.path.join(self.path_basic_templates, model['template'])
+            model_file= model['template'] + '.py'
+            if model_file in os.listdir(self.path_basic_templates):
+                path = os.path.join(self.path_basic_templates, model_file)
             else:
-                path = os.path.join(self.path_templates, model['template'])
+                path = os.path.join(self.path_templates, model_file)
             # Load the text
             text = open(path).read()
             # Find the list of local parameters
@@ -383,7 +391,7 @@ class Author():
         lines = []
         for model_id, model in self.models.items():
             template_name = model["template"]
-            line = f"self.model_{model_id} = {template_name}("
+            line = f"self.model_{model_id} = {template_name}.{template_name}("
             for k,v in model["parameters"].items():
                 line += f"{k} = {self.subsets[v]}, "
             line += ")"
@@ -462,7 +470,8 @@ class Author():
         lines = ["import torch"]
         for model in self.models.values():
             import_name = model["template"]
-            if import_name in os.listdir(self.path_basic_templates):
+            import_file = import_name+'.py'
+            if import_file in os.listdir(self.path_basic_templates):
                 lines.append(f"from src.basic_templates import {import_name}")
             else:
                 lines.append(f"from src.templates.{import_name} import {import_name}")
@@ -547,3 +556,35 @@ class Author():
         """
         self.parameters = list(set([self.subsets[d] for d in self.subsets.data]))
         self.parameters.sort()
+
+    def create_model_generation_file(self):
+        file = """
+import src.templates as templates
+import src.basic_templates as basic_templates
+def get_model(model_name):
+    """
+        imports = ""
+        for model_file in os.listdir(self.path_basic_templates):
+            model_name = model_file.split(".")[0]
+            file += f"""
+    if model_name == "{model_name}":
+        return basic_templates.{model_name}.{model_name}()"""
+            imports += f'''from . import {model_name}\n'''
+        open(os.path.join(self.path_basic_templates, '__init__.py'),'w').write(imports)
+        imports = ""
+        for model_file in os.listdir(self.path_templates):
+            model_name = model_file.split(".")[0]
+            file += f"""
+    if model_name == "{model_name}":
+        return templates.{model_name}.{model_name}()"""
+            imports += f'''from . import {model_name}\n'''
+        open(os.path.join(self.path_templates, '__init__.py'),'w').write(imports)
+        open(self.model_generation_file, 'w').write(file)
+    def add_model_generation_file(self,model_name):
+        if not os.path.exists(self.model_generation_file):
+            self.create_model_generation_file()
+        else:
+            string_to_add = f'''
+    if model_name == "{model_name}":
+        return templates.{model_name}.{model_name}()'''
+            open(self.model_generation_file,'a').write(string_to_add)

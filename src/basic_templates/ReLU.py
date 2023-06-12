@@ -32,9 +32,7 @@ class ReLU(torch.nn.Module):
         ):
         super(ReLU, self).__init__()
         self.relu = torch.nn.ReLU(inplace = False, 
-                                device=___device____, 
-                                dtype=___dtype____
-                                )
+                                    )
 
     def forward(self, X):
         x = X['X']
