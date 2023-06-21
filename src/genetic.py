@@ -1,4 +1,5 @@
 import random,os
+from graph import Graph
 
 script_directory = os.path.dirname(os.path.abspath(__file__))
 path_templates = os.path.join(script_directory, 'templates')
@@ -10,6 +11,9 @@ def get_possibles_models():
         model_name = model_file.split(".")[0]
         model_list.append(model_name)
     return model_list
+
+def is_double_input(model_name):
+    return model_name == 'Add' or model_name =='Multiply' or model_name == 'MatMul' or model_name == 'LSTMCell'
 
 def get_previous_nodes(edges,node):
     previous_nodes = []
@@ -72,22 +76,80 @@ class geneticNetwork():
     
     def random_decrease(self,net):
         repeat = True
-        n_nodes = len(net[0])
+        graph = net[0]
+        n_nodes = len(graph.nodes)
         while(repeat):
-            random_node = random.choice(list(net[0].keys()))
-            if can_decrease(net[0],net[1],random_node):
-                next_nodes = get_next_nodes(net[1],random_node)
-                previous_node = get_previous_nodes(net[1],random_node)[0]
-                node_index = 0
-                for i,e in enumerate(net[1]):
-                    if (e['id'] == random_node):
-                        node_index = i
-                    else:
-                        for j,input in enumerate(list(e['inputs'])):
-                            if e['inputs'][input][0] == random_node:
-                                net[1][i]['inputs'][input][0] = previous_node
-                del net[1][node_index]
-                del net[0][random_node]
+            random_node = random.choice(list(graph.nodes.keys()))
+            if can_decrease(graph.nodes,graph.runs,random_node):
+                graph = self.remove_node(graph,random_node)
                 repeat = False
-            #Remove Add node if both inputs of Add are the same
-        return net
+        return graph
+
+
+    #Removes the node from a network.
+    #For now, only 1 to 1 modules can be removed,
+    #and 2 inputs/1 output networks are removed if one
+    #input is the parent of another (we can still have parent and child networks
+    # be inputs of a 2 inputs net if the parent net is branched with an identity module
+    def remove_node(self,graph,node_to_remove):
+        #next_nodes = graph.get_children_run(node_to_remove)
+        #print(next_nodes)
+        previous_node = [0,graph.inputs[0]]
+        runs_to_delete=[]
+        for i,e in enumerate(graph.runs):
+            if (e['id'] == node_to_remove):
+                previous_node = e['inputs'][list(e['inputs'])[0]][0]
+                runs_to_delete.append(i)
+                
+            else:
+                for input in e['inputs']:
+                    if e['inputs'][input][0] == node_to_remove:
+                        e['inputs'][input][0] = previous_node
+
+        for i in runs_to_delete:
+            del graph.runs[i]        
+        #Remove nodes with 2 inputs if both inputs are the same or 
+        # if one of the inputs is a parent of the other (without an identity node)
+        nodes_to_remove = []
+        for node in graph.nodes:
+            if is_double_input(graph.nodes[node]['template']):
+                node_runs = graph.get_parents_runs_wt_indices(node)
+                max_run_l = 0
+                runs_to_delete=[]
+                for index,run_ in enumerate(node_runs):
+                    run = run_[1]
+                    keys_to_delete = []
+                    for i1 in run['inputs']:
+                        for i2 in run['inputs']:
+                            if i1 != i2:
+                                if graph.is_parent(run['inputs'][i1][0],run['inputs'][i2][0]):
+                                    keys_to_delete.append(i1)
+                        
+                    for key in keys_to_delete:
+                        del run['inputs'][key]
+
+                    max_run_l = max(max_run_l,len(run['inputs']))
+                    if len(run['inputs']) == 1:
+                        print(run)
+                        previous_node = run['inputs'][list(run['inputs'])[0]]
+                        it_range = len(graph.runs) - run_[0]
+                        if(index < (len(node_runs) - 1)):
+                            it_range = node_runs[index+1][0] - node_runs[index][0]
+                        for j in range(it_range):
+                            trun = graph.runs[j+run_[0]]
+                            for input in trun['inputs']:
+                                if trun['inputs'][input][0] == node:
+                                    trun['inputs'][input] = previous_node
+                        runs_to_delete.append(run_[0])
+                
+                for i in runs_to_delete:
+                    del graph.runs[i]
+
+                if len(node_runs) <=1:
+                    nodes_to_remove.append(node)
+        del graph.nodes[node_to_remove]
+        for i in nodes_to_remove:
+            del graph.nodes[i]
+
+        return graph
+    
