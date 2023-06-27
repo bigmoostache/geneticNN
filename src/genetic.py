@@ -83,7 +83,8 @@ class geneticNetwork():
             if can_decrease(graph.nodes,graph.runs,random_node):
                 graph = self.remove_node(graph,random_node)
                 repeat = False
-        return graph
+        net[0] = graph
+        return net
 
 
     #Removes the node from a network.
@@ -153,3 +154,92 @@ class geneticNetwork():
 
         return graph
     
+    def remove_run(self,graph,run_id):
+        #next_nodes = graph.get_children_run(node_to_remove)
+        #print(next_nodes)
+        run = graph.runs[run_id]
+        node_to_remove = run['id']
+        previous_nodes = run['inputs']
+        for i,e in enumerate(graph.runs):
+            if (e['id'] == node_to_remove):
+                previous_node = e['inputs'][list(e['inputs'])[0]][0]
+                runs_to_delete.append(i)
+                
+            else:
+                for input in e['inputs']:
+                    if e['inputs'][input][0] == node_to_remove:
+                        e['inputs'][input][0] = previous_node
+
+        for i in runs_to_delete:
+            del graph.runs[i]        
+        #Remove nodes with 2 inputs if both inputs are the same or 
+        # if one of the inputs is a parent of the other (without an identity node)
+        nodes_to_remove = []
+        for node in graph.nodes:
+            if is_double_input(graph.nodes[node]['template']):
+                node_runs = graph.get_parents(node)
+                max_run_l = 0
+                runs_to_delete=[]
+                for index,run_ in enumerate(node_runs):
+                    run = run_[1]
+                    keys_to_delete = []
+                    for i1 in run['inputs']:
+                        for i2 in run['inputs']:
+                            if i1 != i2:
+                                if graph.is_parent(run['inputs'][i1][0],run['inputs'][i2][0]):
+                                    keys_to_delete.append(i1)
+                        
+                    for key in keys_to_delete:
+                        del run['inputs'][key]
+
+                    max_run_l = max(max_run_l,len(run['inputs']))
+                    if len(run['inputs']) == 1:
+                        print(run)
+                        previous_node = run['inputs'][list(run['inputs'])[0]]
+                        it_range = len(graph.runs) - run_[0]
+                        if(index < (len(node_runs) - 1)):
+                            it_range = node_runs[index+1][0] - node_runs[index][0]
+                        for j in range(it_range):
+                            trun = graph.runs[j+run_[0]]
+                            for input in trun['inputs']:
+                                if trun['inputs'][input][0] == node:
+                                    trun['inputs'][input] = previous_node
+                        runs_to_delete.append(run_[0])
+                
+                for i in runs_to_delete:
+                    del graph.runs[i]
+
+                if len(node_runs) <=1:
+                    nodes_to_remove.append(node)
+        del graph.nodes[node_to_remove]
+        for i in nodes_to_remove:
+            del graph.nodes[i]
+
+        return graph
+    
+    def can_replace(self,node_to_replace):
+        #if is_double_input(node_to_replace):
+        return True
+            
+    
+    def random_add(self, net):
+        graph = net[0]
+        n_nodes = len(graph.nodes)
+        node_to_replace = random.choice(list(graph.nodes.keys()))
+        possible_raplacement = self.can_replace(node_to_replace)
+        net[0] = graph
+        return net
+    
+    def add_run(self,graph,new_node, run_to_insert ):
+        if replacement_name != '':
+            for run in graph.runs:
+                if(run['id'] is node_to_replace):
+                    run['id'] = replacement_name
+                for label in run['inputs']:
+                    if run['inputs'][label][0] is node_to_replace:
+                        run['inputs'][label][0] = replacement_name
+            del graph.nodes[node_to_replace]
+            graph.nodes[replacement_name] = new_node_settings
+        else:
+            graph.nodes[node_to_replace] = new_node_settings
+
