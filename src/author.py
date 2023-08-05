@@ -1,6 +1,8 @@
 import re, os, json, logging
 logging.basicConfig(level=logging.INFO)
 
+from model_skeleton import Model_Skeleton
+
 class Subsets:
     def __init__(self, elements):
         self.data = {el: {el} for el in elements}
@@ -18,10 +20,10 @@ class Subsets:
                 self.data[el] = union
         else:
             raise ValueError('One or both elements are not found')
-        
+
 class Author():
     
-    def __init__(self, model_name, models, runs, output):
+    def __init__(self, model_name, model_skeleton,save_dir = ""):
         """
         Constructor for the model generator class.
 
@@ -46,17 +48,19 @@ class Author():
         script_directory = os.path.dirname(os.path.abspath(__file__))
         self.path_templates = os.path.join(script_directory, 'templates')
         self.path_basic_templates = os.path.join(script_directory, 'basic_templates')
-        self.model_generation_file = 'model_generation.py'
-        self.model_generation_file = os.path.join(script_directory,self.model_generation_file)
+        self.save_dir_name = save_dir
+        self.save_dir = os.path.join(script_directory,save_dir)
+        self.model_generation_file = 'model_generation'
+        self.model_generation_file = os.path.join(self.save_dir,self.model_generation_file)
+        
         self.model_name = model_name
-        self.runs =  runs
-        self.sort_runs()
-        self.output = output
-        self.models = models
+        self.graph = model_skeleton
+        self.graph.reorder_runs()
         self.defaults = {}
         self.create_initial_models()
         lines, WARNINGS = self.full_model()
         i=0
+        
         while WARNINGS and i<N_MAX:
             for WARNING in WARNINGS:
                 self.solve_a_warning(WARNING)
@@ -69,10 +73,10 @@ class Author():
         self.merge_parameters()
         lines, WARNINGS = self.full_model()
         model_file = model_name+'.py'
-        model_path = os.path.join(self.path_templates, model_file)
+        model_path = os.path.join(self.save_dir, model_file)
         if not os.path.exists(model_path) or not os.path.exists(self.model_generation_file):
             self.add_model_generation_file(model_name=model_name)
-            open(os.path.join(self.path_templates, '__init__.py'),'a').write(f"\nfrom . import  {model_name}")
+            open(os.path.join(self.save_dir, '__init__.py'),'a').write(f"\nfrom . import  {model_name}")
         open(model_path, 'w').write(re.sub(r" +", " ", "\n".join(lines)))
         
     def sort_runs(self):
@@ -86,7 +90,7 @@ class Author():
         The function does not return anything. It modifies the 'runs' attribute of the 
         class in-place.
         """
-        runs = self.runs
+        runs = self.graph.runs
         n = len(runs)
         for i in range(n):
             for j in range(i+1, n):
@@ -101,7 +105,7 @@ class Author():
                     second = run_a
                 runs[i] = first
                 runs[j] = second
-        self.runs = runs 
+        self.graph.runs = runs 
 
     def get_defaults(self):
         """
@@ -125,7 +129,7 @@ class Author():
         for parameter in self.parameters:
             # First let's find a model that uses that parameter
             found = False
-            for model_id, model in self.models.items():
+            for model_id, model in self.graph.nodes.items():
                 if found:
                     break
                 for l_p, g_p in model["parameters"].items():
@@ -133,7 +137,7 @@ class Author():
                         found = (model_id, l_p)
                         break
             assert found
-            default_value = self.models[found[0]]['defaults'].split('\n')
+            default_value = self.graph.nodes[found[0]]['defaults'].split('\n')
             default_value = [x for x in default_value if l_p in x]
             if len(default_value)!=1:
                 raise Exception(f"Default values found fo {parameter} :{default_value}")
@@ -166,7 +170,7 @@ class Author():
             None
         """
 
-        for model_id, model in self.models.items():
+        for model_id, model in self.graph.nodes.items():
             model_file= model['template'] + '.py'
             if model_file in os.listdir(self.path_basic_templates):
                 path = os.path.join(self.path_basic_templates, model_file)
@@ -180,24 +184,23 @@ class Author():
             matches = re.findall(pattern, text2)
             matches = list(set(matches))
             # Initilize associated global parameters
-            self.models[model_id]["parameters"] = {
+            self.graph.nodes[model_id]["parameters"] = {
                 f"___{p}____" : f"___{p}_{model_id}____" for p in matches
             }
-            # to delete? _ = self.models[model_id]["parameters"]
+            # to delete? _ = self.graph.nodes[model_id]["parameters"]
             # Load json and parse it a little
             text2 = text.split("BEGIN_PROPS")[1]
             text2 = text2.split("END_PROPS")[0]
             props = json.loads(text2)
             props['IN'] = [x.replace('  ', ' ').replace('  ', ' ').replace('  ', ' ') for x in props['IN']]
             props['OUT'] = [x.replace('  ', ' ').replace('  ', ' ').replace('  ', ' ') for x in props['OUT']]
-
-            self.models[model_id]["props"] = props
+            self.graph.nodes[model_id]["props"] = props
             # Load the defaults
             defaults = text.split("def __init__(self,")[1].split("):")[0].replace(", ", "").replace(",", "")
-            self.models[model_id]['defaults'] = defaults
+            self.graph.nodes[model_id]['defaults'] = defaults
         all_parameters = [
             param
-            for model in self.models.values()
+            for model in self.graph.nodes.values()
             for param in model["parameters"].values()
         ]
         self.subsets = Subsets(all_parameters)
@@ -234,6 +237,7 @@ class Author():
         """
         logging.info(f"trying to solve {warning}")
         # First, let's retrieve the interesting model
+
         _ = [x.split(':') for x in warning.split(' ') if "VAR:" in x][0]
         model_id, variable_name = _[2], _[1]
         if model_id in {0, '0'}:
@@ -247,7 +251,7 @@ class Author():
         for param in params_involved:
             warning_template = warning_template.replace(param, "___###____")
         to_match = None
-        for out in self.models[model_id]["props"]["OUT"]:
+        for out in self.graph.nodes[model_id]["props"]["OUT"]:
             params_involved_out = re.findall(r"___(.*?)____", out)
             params_involved_out = [f"___{x}____" for x in params_involved_out]
             out_template = out
@@ -260,7 +264,7 @@ class Author():
             raise Exception(f"Unsolvable requirement {warning} in model {model_id}")
         for local_param, global_param in zip(params_involved_out, params_involved):
             logging.info(f"setting {local_param} to {global_param} in model {model_id}")
-            self.subsets.merge(self.models[model_id]['parameters'][local_param], global_param)
+            self.subsets.merge(self.graph.nodes[model_id]['parameters'][local_param], global_param)
 
     def get_all_translated_props(self):
         """
@@ -286,10 +290,10 @@ class Author():
                 WARNINGS (list): A list of ill-formed input properties.
         """
         INs, OUTs = [],  []
-        for run in self.runs:
-            model = self.models[run["id"]]
+        for run in self.graph.runs:
+            model = self.graph.nodes[run["id"]]
             INs += [self.local_to_global_run(x, run) for x in model["props"]['IN']]
-        for model_id, model in self.models.items():
+        for model_id, model in self.graph.nodes.items():
             OUTs += [self.local_to_global_output(OUT, model_id) for OUT in model["props"]["OUT"]]
         INs = set(INs)
         OUTs = list(set(OUTs))
@@ -299,7 +303,7 @@ class Author():
             return set(tokens) == {'0'}
         
         def keep_out(OUT):
-            variables = {f'VAR:{v["variable"]}:{v["model_id"]}':f'VAR:{k}' for k,v in self.output.items()}
+            variables = {f'VAR:{v["variable"]}:{self.graph.runs[v["run_id"]]["id"]}':f'VAR:{k}' for k,v in self.graph.outputs.items()}
             keep = False
             for variable in variables:
                 if variable in OUT:
@@ -311,7 +315,6 @@ class Author():
         for OUT in OUTs:
             WARNINGS.discard(OUT)
         WARNINGS = list(WARNINGS)
-
         INs = [IN.replace(":0", "") for IN in INs if ok(IN)]
         OUTs = [keep_out(x) for x in OUTs]
         OUTs = [x[1] for x in OUTs if x[0]]
@@ -322,7 +325,7 @@ class Author():
         Transforms a statement from local parameters to global parameters for a given run.
 
         This method takes a statement and a run, and converts local parameters in the statement to
-        global parameters according to the mappings stored in self.models for the given run. 
+        global parameters according to the mappings stored in self.graph.nodes for the given run. 
         After this conversion, it further transforms each token in the statement that contains a variable, 
         by replacing it with a formatted string containing the original variable's name and the ID of the model 
         from where this variable originates.
@@ -335,15 +338,19 @@ class Author():
             str: The transformed statement with global parameters and variables formatted with their origin model's ID.
         """
         model_id = run['id']
-        for k,v in self.models[model_id]['parameters'].items():
+        for k,v in self.graph.nodes[model_id]['parameters'].items():
             statement = statement.replace(k,self.subsets[v])
         statement = statement.split(' ')
+        
         def transform(token):
             if 'VAR:' not in token:
                 return token
             variable_name = token.split(':')[1]
             variable_origin = run["inputs"][variable_name]
-            model_origin_id = variable_origin[0]
+            if variable_origin[0] == -1:
+                model_origin_id = 0
+            else:
+                model_origin_id = self.graph.runs[variable_origin[0]]['id']
             variable_origin_name = variable_origin[1]
             token = f"VAR:{variable_origin_name}:{model_origin_id}"
             return token
@@ -354,7 +361,7 @@ class Author():
         """
         Converts a statement from local parameters to global parameters and transforms variable tokens in the context of model output.
 
-        This method first replaces local parameters in the statement with global parameters according to the mappings stored in self.models for a given model_id. 
+        This method first replaces local parameters in the statement with global parameters according to the mappings stored in self.graph.nodes for a given model_id. 
         Then, it further transforms each token in the statement that contains a variable, by appending the model_id to it.
 
         Args:
@@ -364,7 +371,7 @@ class Author():
         Returns:
             str: The transformed statement with global parameters and variables appended with the model_id.
         """
-        for k,v in self.models[model_id]['parameters'].items():
+        for k,v in self.graph.nodes[model_id]['parameters'].items():
             statement = statement.replace(k,self.subsets[v])
         def transform(token):
             if 'VAR:' not in token:
@@ -389,7 +396,7 @@ class Author():
         parameters = self.get_all_parameters()
         # Initialization part
         lines = []
-        for model_id, model in self.models.items():
+        for model_id, model in self.graph.nodes.items():
             template_name = model["template"]
             line = f"self.model_{model_id} = {template_name}.{template_name}("
             for k,v in model["parameters"].items():
@@ -429,7 +436,7 @@ class Author():
         # let's write the forward part
         lines = []
         import json
-        for run_id, run in enumerate(self.runs):
+        for run_id, run in enumerate(self.graph.runs):
             model_id = run['id']
             inputs =  run['inputs']
             lines += [
@@ -437,20 +444,20 @@ class Author():
                 "Z = {"
             ]
             for k,v in inputs.items():
-                if v[0] != 0:
+                if v[0] != -1:
                     lines.append(f"  \"{k}\" : model_output_{v[0]}[\"{v[1]}\"],")
                 else:
                     lines.append(f"  \"{k}\" : X[\"{v[1]}\"],")
             lines += [
                 "}",
-                f"model_output_{model_id} = self.model_{model_id}(Z)",
+                f"model_output_{run_id} = self.model_{model_id}(Z)",
             ]
         lines.append("# Aggregating results")
         lines.append("RESULT = {}")
-        for output_name, output_source in self.output.items():
-            model_id = output_source["model_id"]
+        for output_name, output_source in self.graph.outputs.items():
+            run_id = output_source["run_id"]
             variable_to_fetch = output_source["variable"]
-            lines.append(f"RESULT[\"{output_name}\"] = model_output_{model_id}[\"{variable_to_fetch}\"]")
+            lines.append(f"RESULT[\"{output_name}\"] = model_output_{run_id}[\"{variable_to_fetch}\"]")
         lines.append("return RESULT")
 
         lines = ["def forward(self, X):"]+['\t'+x for x in lines]
@@ -468,7 +475,7 @@ class Author():
             list: A list of unique import statements needed for the model.
         """
         lines = ["import torch"]
-        for model in self.models.values():
+        for model in self.graph.nodes.values():
             import_name = model["template"]
             import_file = import_name+'.py'
             if import_file in os.listdir(self.path_basic_templates):
@@ -531,18 +538,18 @@ class Author():
         to the same data type.
         """
         rep_device, rep_dtype = None, None
-        for model_id, model in self.models.items():
+        for model_id, model in self.graph.nodes.items():
             for k, v in model["parameters"].items():
                 if 'device' in v:
                     if rep_device == None:
-                        rep_device = self.models[model_id]["parameters"][k]
+                        rep_device = self.graph.nodes[model_id]["parameters"][k]
                     else:
-                        self.subsets.merge(rep_device, self.models[model_id]["parameters"][k])
+                        self.subsets.merge(rep_device, self.graph.nodes[model_id]["parameters"][k])
                 if 'dtype' in v:
                     if rep_dtype == None:
-                        rep_dtype = self.models[model_id]["parameters"][k]
+                        rep_dtype = self.graph.nodes[model_id]["parameters"][k]
                     else:
-                        self.subsets.merge(rep_dtype, self.models[model_id]["parameters"][k])
+                        self.subsets.merge(rep_dtype, self.graph.nodes[model_id]["parameters"][k])
 
     def get_all_parameters(self):
         """
@@ -564,22 +571,17 @@ import src.basic_templates as basic_templates
 def get_model(model_name):
     """
         imports = ""
-        for model_file in os.listdir(self.path_basic_templates):
+        for model_file in os.listdir(self.save_dir):
             model_name = model_file.split(".")[0]
+            if model_name is '__init__':
+                continue
             file += f"""
     if model_name == "{model_name}":
-        return basic_templates.{model_name}.{model_name}()"""
+        return {model_name}.{model_name}()"""
             imports += f'''from . import {model_name}\n'''
-        open(os.path.join(self.path_basic_templates, '__init__.py'),'w').write(imports)
-        imports = ""
-        for model_file in os.listdir(self.path_templates):
-            model_name = model_file.split(".")[0]
-            file += f"""
-    if model_name == "{model_name}":
-        return templates.{model_name}.{model_name}()"""
-            imports += f'''from . import {model_name}\n'''
-        open(os.path.join(self.path_templates, '__init__.py'),'w').write(imports)
+        open(os.path.join(self.save_dir, '__init__.py'),'w').write(imports)
         open(self.model_generation_file, 'w').write(file)
+        
     def add_model_generation_file(self,model_name):
         if not os.path.exists(self.model_generation_file):
             self.create_model_generation_file()
