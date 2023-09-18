@@ -2,10 +2,13 @@ from graph import Graph
 
 
 models = { # For now, only the template is required
-    'Linear_1' : {"template" : "Linear"}, 
-    'Linear_2' : {"template" : "Linear"}, 
-    'Linear_3' : {"template" : "Linear"}, 
-    'ReLU1' : {"template" : "ReLU"}, 
+    'Linear_1' : { "source" : "template", "name" : "Linear"},
+    'Linear_2' : {"template" : "Linear"},
+    'Linear_3' : {"template" : "Linear"},
+    'Linear_1' : {"template" : "Linear"},
+    'Linear_2' : {"template" : "Linear"},
+    'Linear_3' : {"template" : "Linear"},
+    'ReLU1' : {"template" : "ReLU"},
     'ReLU2' : {"template" : "ReLU"}, 
     'ReLU3' : {"template" : "ReLU"}, 
 }

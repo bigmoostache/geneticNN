@@ -3,6 +3,27 @@ import torch
 """
 BEGIN_PROPS
 {
+"variables": {
+    "X": {
+        "io" : "in",
+        "dim": "1",
+        "type" : "float"
+        },
+    "Y": {
+        "io" : "out",
+        "dim": "1",
+        "type": "float"
+        }
+    },
+"parameters" : {
+    "bias": {"type" : "bool"},
+    "input_dim": {"type" : "int"}, 
+    "output_dim": {"type" : "int"}
+},
+"constraints" : [
+    ["equality",["input_dim", "_X_0"]], 
+    ["equality",["output_dim", "_Y_0"]]
+]
  "OUT": [
  "VAR:Y ___output_dim____"
  ],

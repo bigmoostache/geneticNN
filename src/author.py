@@ -1,7 +1,7 @@
 import re, os, json, logging
 logging.basicConfig(level=logging.INFO)
 
-from model_skeleton import Model_Skeleton
+from modelskeleton import ModelSkeleton
 
 class Subsets:
     def __init__(self, elements):

@@ -3,12 +3,25 @@ import torch
 """
 BEGIN_PROPS
 {
- "OUT": [
- "VAR:Y ___input_dim____"
- ],
- "IN": [
- "VAR:X ___input_dim____"
- ]
+"variables": {
+    "X": {
+        "io" : "in",
+        "dim": "1",
+        "type": "float"
+        },
+    "Y": {
+        "io" : "out",
+        "dim": "1",
+        "type":"float"
+        }
+    },
+"parameters" : {
+    "bias": {"type" : "bool"},
+    "relu_dim": {"type" : "int"}
+},
+"constraints" : [
+    ["equality",["relu_dim", "_X_0","_Y_0"]]
+]
 }
 END_PROPS
 """
@@ -38,3 +51,4 @@ class ReLU(torch.nn.Module):
         x = X['X']
         res = {"Y":self.relu(x)}
         return res
+
