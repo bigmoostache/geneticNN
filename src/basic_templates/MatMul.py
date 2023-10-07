@@ -3,29 +3,43 @@ import torch
 """
 BEGIN_PROPS
 {
- "OUT": [
- "VAR:Y ___output_dim____"
- ],
- "IN": [
- "VAR:M1 ___input_dim____",
- "VAR:M2 first dimension is ___input_dim____",
- "VAR:M2 ___output_dim____"
- ]
+"variables":{
+    "M1":{
+        "io": "in",
+        "dim": 2,
+        "type": "float"
+    },
+    "M2":{
+        "io": "in",
+        "dim": 2,
+        "type": "float"
+    },
+    "Y":{
+        "io": "out",
+        "dim": 2,
+        "type": "float"
+    }
+},
+"parameters": {
+},
+"constraints": [
+    ["equality", ["_M1_0", "_Y_0"]],
+    ["equality", ["_M1_1", "_M2_0"]],
+    ["equality", ["_M2_1", "_Y_1"]]
+]
 }
 END_PROPS
 """
 
 
 class MatMul(torch.nn.Module):
-    def __init__(self, 
-        ___input_dim____ = 10, 
-        ___output_dim____ = 10, 
-        ___device____ = 'cpu', 
-        ___dtype____ = torch.float32,
+    def __init__(self,
+        device = 'cpu',
+        dtype = torch.float32,
         ):
         super(MatMul, self).__init__()
-        self.device = ___device____
-        self.dtype = ___dtype____
+        self.device = device
+        self.dtype = dtype
 
     def forward(self, X):
         x1 = X['M1']

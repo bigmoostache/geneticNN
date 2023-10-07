@@ -1,26 +1,29 @@
 import sys
-sys.path.append("C:/Users/Guillaume Draznieks/Documents/PROJETS/Biological GNN")
+sys.path.append("../src")
 from src.author import Author
+from src.modelskeleton import ModelSkeleton
 
 # MLP
 models = {
-    'Transpose': {"template": "Transpose"},
-    'MATMUL': {"template": "MatMul"},
-    'Scale': {"template": "Scale"},
-    'Softmax': {"template": "Softmax"},
-    'MATMUL2': {"template": "MatMul"},
+    'Transpose': {"source": "basic_templates",  "type": "Transpose"},
+    'MATMUL': {"source": "basic_templates",  "type": "MatMul"},
+    'Scale': {"source": "basic_templates",  "type": "Scale"},
+    'Softmax': {"source": "basic_templates",  "type": "Softmax"},
+    'MATMUL2': {"source": "basic_templates",  "type": "MatMul"},
 }
 
 runs = [
-    {'id': 'Transpose', 'inputs': {'X': (0, 'K')}},
-    {'id': 'MATMUL', 'inputs': {'M1': (0, 'Q'), 'M2':('Transpose', 'Y')}},
-    {'id': 'Scale', 'inputs': {'X': ('MATMUL', 'Y')}},
-    {'id': 'Softmax', 'inputs': {'X': ('Scale', 'Y')}},
-    {'id': 'MATMUL2', 'inputs': {'M1': ('Softmax', 'Y'), 'M2':(0, 'V')}},
+    {'id': 'Transpose', 'inputs': {'X': [-1, 'K']}},
+    {'id': 'MATMUL', 'inputs': {'M1': [-1, 'Q'], 'M2':[0, 'Y']}},
+    {'id': 'Scale', 'inputs': {'X': [1, 'Y']}},
+    {'id': 'Softmax', 'inputs': {'X': [2, 'Y']}},
+    {'id': 'MATMUL2', 'inputs': {'M1': [3, 'Y'], 'M2': [-1, 'V']}}
 ]
 
 output = {
-    "Y": {"model_id": 'MATMUL2', "variable": "Y"},
+    "Y": [4, "Y"],
 }
 
-r = Author("ATTENTION", models, runs, output)
+model_skeleton = ModelSkeleton(models, runs, output)
+
+r = Author("FFW", model_skeleton,save_dir="test_output" )

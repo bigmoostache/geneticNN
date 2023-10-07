@@ -3,27 +3,41 @@ import torch
 """
 BEGIN_PROPS
 {
- "OUT": [
- "VAR:Y ___input_dim____"
- ],
- "IN": [
- "VAR:X1 ___input_dim____",
- "VAR:X2 ___input_dim____"
- ]
+"variables":{
+    "X1":{
+        "io": "in",
+        "dim": 1,
+        "type": "float"
+    },
+    "X2":{
+        "io": "in",
+        "dim": 1,
+        "type": "float"
+    },
+    "Y":{
+        "io": "out",
+        "dim": 1,
+        "type": "float"
+    }
+},
+"parameters": {
+},
+"constraints": [
+    ["equality", ["_X1_0", "_X2_0", "_Y_0"]]
+]
 }
 END_PROPS
 """
 
 
 class Add(torch.nn.Module):
-    def __init__(self, 
-        ___input_dim____ = 10, 
-        ___device____ = 'cpu', 
-        ___dtype____ = torch.float32,
-        ):
+    def __init__(self,
+                 device='cpu',
+                 dtype=torch.float32,
+                 ):
         super(Add, self).__init__()
-        self.device = ___device____
-        self.dtype = ___dtype____
+        self.device = device
+        self.dtype = dtype
 
     def forward(self, X):
         x1 = X['X1']

@@ -31,5 +31,5 @@ graph.reorder_runs()
 print((graph.nodes,graph.runs,graph.outputs))
 
 gen = genetic.geneticNetwork((graph,0),10,1,0.1,0.1,1)
-graph = gen.remove_run(graph,3)
+graph = gen.remove_run(graph, 3)
 print((graph.nodes,graph.runs,graph.outputs))

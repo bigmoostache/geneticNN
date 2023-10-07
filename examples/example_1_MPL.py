@@ -1,36 +1,42 @@
-import sys,os
+import sys, os
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
+#script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Construct the relative path to the project folder
-project_path = os.path.join(script_dir, '..')
+#project_path = os.path.join(script_dir, '..')
 
 # Add the project folder to the Python path
-sys.path.append(project_path)
+#sys.path.append(project_path)
 
-#sys.path.append("../src")
+sys.path.append("../src")
 from src.author import Author
-# MLP
-models = { # For now, only the template is required
-    'Linear_1' : {"template" : "Linear"}, 
-    'Linear_2' : {"template" : "Linear"}, 
-    'Linear_3' : {"template" : "Linear"}, 
-    'ReLU1' : {"template" : "ReLU"}, 
-    'ReLU2' : {"template" : "ReLU"}, 
-    'ReLU3' : {"template" : "ReLU"}, 
-}
+from src.modelskeleton import ModelSkeleton
 
-runs = [ # Does not have to be sorted, it willbe sorted by myRealWriter
-    {'id' : 'Linear_1', 'inputs':{'X':(0, 'X')}},
-    {'id' : 'Linear_2', 'inputs':{'X':('ReLU1', 'Y')}},
-    {'id' : 'Linear_3', 'inputs':{'X':('ReLU2', 'Y')}},
-    {'id' : 'ReLU1', 'inputs':{'X':('Linear_1', 'Y')}},
-    {'id' : 'ReLU2', 'inputs':{'X':('Linear_2', 'Y')}},
-    {'id' : 'ReLU3', 'inputs':{'X':('Linear_3', 'Y')}}
-]
+if __name__ == "__main__":
+    # MLP
+    models = {  # For now, only the template is required
+        'Linear_1': {"source": "basic_templates", "type": "Linear"},
+        'Linear_2': {"source": "basic_templates", "type": "Linear"},
+        'Linear_3': {"source": "basic_templates", "type": "Linear"},
+        'ReLU1': {"source": "basic_templates", "type": "ReLU"},
+        'ReLU2': {"source": "basic_templates", "type": "ReLU"},
+        'ReLU3': {"source": "basic_templates", "type": "ReLU"},
+    }
 
-output = { # Model outputs
-    "Y" : {"model_id" :'ReLU3', "variable": "Y"},
-}
+    runs = [  # Does not have to be sorted, it will be sorted by myRealWriter
+        {'id': 'Linear_1', 'inputs': {'X': [-1, 'X']}},
+        {'id': 'ReLU1', 'inputs': {'X': [0, 'Y']}},
+        {'id': 'Linear_2', 'inputs': {'X': [1, 'Y']}},
+        {'id': 'ReLU2', 'inputs': {'X': [2, 'Y']}},
+        {'id': 'Linear_3', 'inputs': {'X': [3, 'Y']}},
+        {'id': 'ReLU3', 'inputs': {'X': [4, 'Y']}}
+    ]
 
-r= Author("MLP", models, runs, output)
+    output = {  # Model outputs
+        "Y": [5, "Y"],
+    }
+
+    model_skeleton = ModelSkeleton(models, runs, output)
+    r = Author("MLP", model_skeleton, save_dir="test_output")
+
+#%%

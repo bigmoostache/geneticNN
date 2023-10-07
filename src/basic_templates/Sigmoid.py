@@ -3,12 +3,22 @@ import torch
 """
 BEGIN_PROPS
 {
- "OUT": [
- "VAR:Y ___input_dim____"
- ],
- "IN": [
- "VAR:X ___input_dim____"
- ]
+"variables": {
+    "X": {
+        "io" : "in",
+        "dim": "1",
+        "type": "float"
+        },
+    "Y": {
+        "io" : "out",
+        "dim": "1",
+        "type":"float"
+        }
+    },
+"parameters" : {},
+"constraints" : [
+    ["equality",[ "_X_0","_Y_0"]]
+]
 }
 END_PROPS
 """
@@ -23,15 +33,14 @@ class Sigmoid(torch.nn.Module):
     Output: (∗), same shape as the input.
     """
 
-    def __init__(self, 
-        ___input_dim____ = 10, 
-        ___device____ = 'cpu', 
-        ___dtype____ = torch.float32,
-        ):
+    def __init__(self,
+                 device='cpu',
+                 dtype=torch.float32
+                 ):
         super(Sigmoid, self).__init__()
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, X):
         x = X['X']
-        res = {"Y":self.sigmoid(x)}
+        res = {"Y": self.sigmoid(x)}
         return res

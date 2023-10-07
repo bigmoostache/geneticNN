@@ -1,6 +1,6 @@
 import json
-import re, os
-from .modelskeleton import ModelSkeleton
+import os
+from modelskeleton import ModelSkeleton
 from typing import Iterable, Dict, Any
 from sympy import symbols, Eq, solve, sympify
 import copy
@@ -21,17 +21,27 @@ class Subsets:
         else:
             raise KeyError(f'No key {item} found')
 
+    def get_equivalence_class(self,item):
+        if item in self.data:
+            return self.data[item]
+        else:
+            raise KeyError(f'No key {item} found')
+
     def merge(self, el1, el2):
         if el1 in self.data and el2 in self.data:
             ref_1, ref_2 = self[el1], self[el2]
-            del self.inverse_reduced_list[id(self.data[el1])]
-            if ref_1 != ref_2:
-                del self.inverse_reduced_list[id(self.data[el2])]
-            union = self.data[el1].union(self.data[el2])
+
+            union = self.data[ref_1].union(self.data[ref_2])
+            id_class_ref1 = id(self.data[ref_1])
+            id_class_ref2 = id(self.data[ref_2])
             for el in union:
                 self.data[el] = union
-            self.reduced_list.discard(ref_2)
+            if ref_1 != ref_2:
+                del self.inverse_reduced_list[id_class_ref2]
+                self.reduced_list.discard(ref_2)
             self.inverse_reduced_list[id(union)] = ref_1
+            if id(union) != id_class_ref1:
+                del self.inverse_reduced_list[id_class_ref1]
         else:
             raise ValueError(f'One or both elements are not found: {el1} , {el2}')
 
@@ -45,19 +55,50 @@ class Subsets:
             self.check_add(el)
 
 
+
 class ModelProperties:
-    def __init__(self):
-        self.script_directory = os.path.dirname(os.path.abspath(__file__))
-        self.props = {}
+    """A class that represents the properties of a model.
+
+    This class provides methods for generating model properties from a file and accessing them.
+
+    Attributes:
+        script_directory (str): The directory path of the current script.
+        props (dict): The properties of the model.
+    """
+    script_directory = os.path.dirname(os.path.abspath(__file__))
 
     @staticmethod
     def generate_properties_from_file(model_file):
         props = ModelProperties()
         props.props = ModelProperties.get_props(model_file)
 
-    # returns the props of a model read in the source file
+    @staticmethod
+    def generate_model_properties_from_model_list(model_list):
+        """
+        returns the props of each model of a list or dict of models
+
+        :param model_list: A list of items (model_name, model_data) or
+        a dict with model names as keys and model data as value
+
+        :return: a dict containing the props of the models ordered by model name
+        """
+        if isinstance(model_list, dict):
+            model_list = [(model, model_list[model]) for model in model_list.keys()]
+
+        props = {}
+        for model, data in model_list:
+            model_file = ModelProperties.script_directory + '/' + data["source"] + "/" + data["type"] + ".py"
+            props[model] = ModelProperties.get_props(model_file)
+        return props
+
+
     @staticmethod
     def get_props(model_file):
+        """
+        returns the props of a model read in the source file
+        :param model_file: the path to the model file
+        :return: dict containing the props of the model
+        """
         text = open(model_file).read()
         text2 = text.split("BEGIN_PROPS")[1]
         text2 = text2.split("END_PROPS")[0]
@@ -65,28 +106,30 @@ class ModelProperties:
         return props
 
 
-def get_variable_parameter_name(model_id, variable_id, dim):
-    """free dimension not implemented yet
-    if dim is -1:
-        dim = "default"
-    """
-    return f"{model_id}__{variable_id}_{dim}"
-
-
-def get_global_parameter(model_id: str, parameter_id: str):
-    return f"{model_id}_{parameter_id}"
-
-
 class ModelPropertiesMapper:
-    def __init__(self, model_skeleton, detailed_props=True, n_constraints_trial=1):
+    """
+    Initialize ModelPropertiesMapper with the given parameters.
+
+    :param model_skeleton: An instance of ModelSkeleton class.
+    :param detailed_props: A boolean indicating whether to generate detailed properties.
+
+    !! This class reads the properties of the submodels, inputs and outputs properties of the model_skeleton so make
+    sure those are sufficiently completed before.!!
+    Submodels properties need:
+        - "source": the folder where the model file can be found (if the path is relative, will search from the parent
+         folder of this file.
+        - "name": the name of the model
+
+    """
+    def __init__(self, model_skeleton, detailed_props=True):
 
         self.param_subset: Subsets = None
         self.model_skeleton = model_skeleton
         self.script_directory = os.path.dirname(os.path.abspath(__file__))
         self.props: dict = None
-        self.constraints: dict = {"equality": [], "symbolic": [], "parameters":{}}
-        self.symbolic_constraints_sets: list = []
-        self.sub_props: dict = {}
+        self.constraints: dict = {"equality": [], "symbolic": [], "parameter": {}}
+        self.variables_props: dict = {}
+        self.sub_props: dict = None
         self.sympy_data: dict = {}
 
         self.generate_properties()
@@ -96,24 +139,38 @@ class ModelPropertiesMapper:
 
     # Solves the constraints on the model and generate the local and global dictionaries of parameters
     def generate_properties(self):
-        # loads the sub-models properties
-        for submodel in self.model_skeleton.submodels:
-            data = self.model_skeleton.submodels[submodel]
-            model_file = ""
-            if os.path.isabs(data["source"]):
-                model_file = data["source"]
-            else:
-                model_file = self.script_directory + '/' + data["source"]
-            model_file = model_file + "/" + data["type"] + ".py"
-            self.sub_props[submodel] = ModelProperties.get_props(model_file)
-            subprops = self.sub_props[submodel]
-            for var in subprops["variables"].values():
-                var["dim"] = int(var["dim"])
 
+        # loads the sub-models properties
+        self.sub_props = ModelProperties.generate_model_properties_from_model_list(self.model_skeleton.submodels)
+
+        # generates properties of inputs
+        variables = {}
+        inputs = self.model_skeleton.inputs
+        for input_var in inputs:
+            related_variables = self.model_skeleton.find_models_variables_connected_to_input(input_var)
+            var_data = {}
+            for run_id, model_var in related_variables:
+                model = self.model_skeleton.runs[run_id]['id']
+                var_props = self.sub_props[model]['variables'][model_var]
+                for key in var_props:
+                    val = var_data.get(key)
+                    if val is None:
+                        var_data[key] = var_props[key]
+                    elif val != var_props[key]:
+                        raise ValueError(f"incompatible properties for input variable {model}:{model_var}")
+            variables[input_var] = var_data
+
+        outputs = self.model_skeleton.outputs
+        for output_var, output_info in outputs.items():
+            output_model = self.model_skeleton.runs[output_info[0]]["id"]
+            output_var_name = output_info[1]
+            variables[output_var] = self.sub_props[output_model]["variables"][output_var_name]
+        self.variables_props = variables
         # add the parameters corresponding to the variables
         self.check_and_generate_variables_parameters()
 
     def generate_constraints(self):
+
         runs = self.model_skeleton.runs
         for submodel_id, submodel in self.sub_props.items():
             for index, run in enumerate(runs):
@@ -123,20 +180,36 @@ class ModelPropertiesMapper:
                         self.convert_run_linking_to_equality_constraint(((input_run,input_var),(index,var_name)))
             for constraint in submodel['constraints']:
                 if constraint[0] == 'equality':
-                    global_constraint = [get_global_parameter(submodel_id, param) for param in constraint[1]]
+                    global_constraint = [self.get_extended_parameter_name(submodel_id, param) for param in constraint[1]]
                     self.add_an_equality_constraint(global_constraint)
                 if constraint[0] == 'symbolic':
                     global_constraint = copy.copy(constraint[1])
-                    global_constraint[0] = [get_global_parameter(submodel_id, param) for param in global_constraint[0]]
+                    global_constraint[0] = [self.get_extended_parameter_name(submodel_id, param) for param in global_constraint[0]]
                     self.add_a_symbolic_constraint(global_constraint)
                 if constraint[0] == 'parameter':
-                    global_constraint = (get_global_parameter(submodel_id, constraint[1][0]), constraint[1][1])
+                    global_constraint = (self.get_extended_parameter_name(submodel_id, constraint[1][0]), constraint[1][1])
                     self.add_a_parameter_constraint(global_constraint)
+        # add inputs equality constraints
+        inputs = self.model_skeleton.inputs
+        for input_var in inputs:
+            related_variables = self.model_skeleton.find_models_variables_connected_to_input(input_var)
+            var_dim = self.variables_props[input_var]['dim']
+            for k in range(var_dim):
+                main_parameter = None
+                for run_id, model_var in related_variables:
+                    model = self.model_skeleton.runs[run_id]['id']
+                    var_parameter = self.get_variable_parameter_name(model, model_var, k)
+                    if main_parameter is None:
+                        main_parameter = var_parameter
+                    else:
+                        global_constraint = [main_parameter, var_parameter]
+                        self.add_an_equality_constraint(global_constraint)
+        
 
     def generate_global_parameters(self):
 
         # generates list of global names for all parameters
-        all_params = [get_global_parameter(model_id, parameter_id) for model_id, model in self.sub_props.items() for
+        all_params = [self.get_extended_parameter_name(model_id, parameter_id) for model_id, model in self.sub_props.items() for
                       parameter_id in model['parameters'].keys()]
         self.param_subset = Subsets(all_params)
         for constraint in self.constraints['equality']:
@@ -144,15 +217,16 @@ class ModelPropertiesMapper:
             for param in constraint[1:]:
                 self.param_subset.merge(param_0, param)
 
+
         # rewrite symbolic constraints in terms of global variables only
         for constraint in self.constraints['symbolic']:
             for parameter in constraint[0]:
                 parameter = self.param_subset[parameter]
-        for param in self.constraints['parameters']:
+        for param in self.constraints['parameter']:
             reference = self.param_subset[param]
             if reference is not param:
-                self.constraints['parameters'][reference].extend(self.constraints['parameters'][param])
-                del self.constraints['parameters'][param]
+                self.constraints['parameter'][reference].extend(self.constraints['parameter'][param])
+                del self.constraints['parameter'][param]
 
     def solve_symbolic_constraints(self):
         if len(self.constraints['symbolic']) > 0:
@@ -179,7 +253,7 @@ class ModelPropertiesMapper:
             for model_id, model in self.sub_props.items():
                 for param, param_data in model['parameters'].items():
                     if 'constrained' in param_data and param_data['constrained'] is True:
-                        constrained_params.add(self.param_subset[get_global_parameter(model_id, param)])
+                        constrained_params.add(self.param_subset[self.get_extended_parameter_name(model_id, param)])
             constrained_params_temp = {sympy_variables[param] for param in constrained_params}
 
             # replace the constrained variables by their formulation
@@ -258,12 +332,25 @@ class ModelPropertiesMapper:
         (parameter, constraint_properties) = self.sub_props[constraint[0]], constraint[1], constraint[2]
 
         constraints = self.constraints
-        constraints = constraints.setdefault('parameters', {})
+        constraints = constraints.setdefault('parameter', {})
         current_constraint = constraints.setdefault(parameter, [])
         current_constraint.append(constraint_properties)
 
+    def get_variable_parameter_name(self, model_id, variable_id, dim):
+        """free dimension not implemented yet
+        if dim is -1:
+            dim = "default"
+        """
+        return f"{model_id}___{variable_id}_{dim}"
+
+
+    def get_extended_parameter_name(self, model_id: str, parameter_id: str):
+        return f"{model_id}__{parameter_id}"
+
+    def get_global_parameter(self,model_id: str, parameter_id: str):
+        return self.param_subset[self.get_extended_parameter_name(model_id,parameter_id)]
     def get_local_parameter(self, parameter_id: str):
-        model_id, local_parameter = parameter_id.split('_', 1)
+        model_id, local_parameter = parameter_id.split('__', 1)
         return model_id, local_parameter
 
     def check_and_generate_variables_parameters(self):
@@ -289,7 +376,7 @@ class ModelPropertiesMapper:
 
                     if param_name not in submodel['parameters']:
                         # Generate the parameter corresponding to the dimension index of the variable
-                        submodel['parameters'][param_name] = {'type': 'int'}
+                        submodel['parameters'][param_name] = {'type': 'int', 'virtual': True}
 
     def convert_run_linking_to_equality_constraint(self, constraint):
         """
@@ -335,8 +422,8 @@ class ModelPropertiesMapper:
 
         # Adding parameter constraints
         for dim_index in range(input_var['dim']):
-            input_param = get_variable_parameter_name(input_model_id, variable_key_inp, dim_index)
-            output_param = get_variable_parameter_name(output_model_id, variable_key_out, dim_index)
+            input_param = self.get_variable_parameter_name(input_model_id, variable_key_inp, dim_index)
+            output_param = self.get_variable_parameter_name(output_model_id, variable_key_out, dim_index)
             param_constraint = [input_param, output_param]
             self.add_an_equality_constraint(param_constraint)
 
@@ -353,3 +440,111 @@ class ModelPropertiesMapper:
                 param_1 = param
                 param_2 = constraint[0]
                 self.param_subset.merge(param_1, param_2)
+
+    def get_defaults(self):
+        """
+        :return: A dictionary containing the default values for each parameter in each model
+        """
+        # set defaults for equivalent parameters with equality
+        defaults_front = self.get_global_defaults()
+
+        defaults_total = {model_id: {param: 0 for param in model['parameters'].keys()} for model_id, model in self.sub_props.items()}
+        for param, value in defaults_front.items():
+            for equ in self.param_subset.get_equivalence_class(param):
+                model_id, local_param = self.get_local_parameter(equ)
+                defaults_total[model_id][local_param] = defaults_front[param]
+
+        return defaults_total
+
+    def get_global_defaults(self):
+        """
+        Returns the default values for each global parameter in the model.
+
+        :return: A dictionary mapping each parameter to its default value.
+        """
+        defaults_front = {item: 0 for item in self.param_subset.reduced_list}
+        for param in defaults_front.keys():
+            default_value = None
+            virtual = True
+            for equ in self.param_subset.get_equivalence_class(param):
+                model_id, local_param = self.get_local_parameter(equ)
+                default_value = self.sub_props[model_id]['parameters'][local_param].setdefault('default', None)
+                virtual_value = self.sub_props[model_id]['parameters'][local_param].setdefault('virtul', False)
+                virtual = virtual and virtual_value
+                if default_value is not None:
+                    defaults_front[param] = default_value
+                    continue
+            if virtual:
+                del defaults_front[param]
+
+        return defaults_front
+
+    def get_all_globals(self):
+        """
+        Returns the global parameters of the model.
+
+        :return: A set of parameters names as strings.
+        """
+        return self.param_subset.reduced_list
+
+    def check_global_virtual(self,parameter) -> bool:
+        model, local_name = self.get_local_parameter(parameter)
+        parameter_props = self.sub_props[model]["parameters"][local_name]
+        virtual = parameter_props.get('virtual', False)
+        for other_param in self.param_subset.get_equivalence_class(parameter):
+            other_model, other_param_local = self.get_local_parameter(other_param)
+            virtual = virtual and self.sub_props[other_model]["parameters"][other_param_local].get('virtual', False)
+            if not virtual:
+                #parameters[parameter]['virtual'] = False
+                return False
+        return True
+
+
+    def get_high_order_props(self):
+        # variables info
+        props = {"variables": self.variables_props}
+
+        # parameters info
+        parameters = {}
+        parameters_defaults = self.get_global_defaults()
+        for parameter, default_value in parameters_defaults.items():
+            model, local_name = self.get_local_parameter(parameter)
+            parameters[parameter] = self.sub_props[model]["parameters"][local_name].copy()
+            parameters[parameter]["default"] = default_value
+            parameters[parameter]['virtual'] = self.check_global_virtual(parameter)
+
+
+        props["parameters"] = parameters
+
+        constraints = []
+
+        # equality constraints
+        for input_var,input_data in self.variables_props.items():
+            if input_data["io"] == "out":
+                continue
+            related_variables = self.model_skeleton.find_models_variables_connected_to_input(input_var)
+            run_id,model_var = related_variables[0]
+            model = self.model_skeleton.runs[run_id]['id']
+            var_dim = input_data["dim"]
+            for k in range(var_dim):
+                var_param = self.param_subset[self.get_variable_parameter_name(model, model_var,k)]
+                constraints.append(["equality", [f"_{input_var}_{k}",var_param]])
+        outputs = self.model_skeleton.outputs
+        for output_var, output_info in outputs.items():
+            output_model = self.model_skeleton.runs[output_info[0]]["id"]
+            output_var_name = output_info[1]
+            output_data = self.variables_props[output_var]
+            var_dim = output_data["dim"]
+            for k in range(var_dim):
+                var_param = self.param_subset[self.get_variable_parameter_name(output_model, output_var_name,k)]
+                constraints.append(["equality", [f"_{output_var}_{k}", var_param]])
+
+        for constraint in self.constraints["symbolic"]:
+            constraints.append(["symbolic", constraint])
+
+        for constraint in self.constraints["parameter"]:
+            constraints.append(["parameter", constraint])
+
+        props["constraints"] = constraints.copy()
+
+        return props

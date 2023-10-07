@@ -3,12 +3,22 @@ import torch
 """
 BEGIN_PROPS
 {
- "IN": [
- "VAR:X ___input_dim____"
- ],
- "OUT": [
- "VAR:Y ___input_dim____"
- ]
+"variables":{
+    "X":{
+        "io": "in",
+        "dim": 1,
+        "type": "float"
+    },
+    "Y":{
+        "io": "out",
+        "dim": 1,
+        "type": "float"
+    }
+},
+"parameters": {"dim": {"type": "int", "default": "None"}},
+"constraints": [
+    ["equality", ["_X_0", "_Y_0"]]
+]
 }
 END_PROPS
 """
@@ -22,15 +32,14 @@ class Softmax(torch.nn.Module):
     between the Softmax and itself. Use LogSoftmax instead (it’s faster and has better numerical properties).
     """
     def __init__(self, 
-        ___dim____ = None, 
-        ___device____ = 'cpu', 
-        ___dtype____ = torch.float32,
-        ___input_dim____ = 10,
+        dim = None,
+        device = 'cpu',
+        dtype= torch.float32,
         ):
         super(Softmax, self).__init__()
-        self.softmax = torch.nn.Softmax(dim=___dim____, 
-                                device=___device____, 
-                                dtype=___dtype____
+        self.softmax = torch.nn.Softmax(dim=dim,
+                                device=device,
+                                dtype=dtype
                                 )
 
     def forward(self, X):
