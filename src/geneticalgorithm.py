@@ -144,6 +144,9 @@ class GeneticAlgorithm:
         for k in range(number_of_candidates):
             starting_id, starting_model = self.model_sampler([(i, m['model']) for i, m in enumerate(self.bests)])
             is_add_transform = self.bool_sampler()
+            # don't remove the only run if there is only one left
+            if len(starting_model.model_skeleton.runs) == 1:
+                is_add_transform = True
             if is_add_transform:
                 proposed_submodel, proposed_input, proposed_output = structure_modifiers[
                     starting_id].propose_random_add()
