@@ -46,7 +46,7 @@ class SimpleGeneticHistory(GeneticHistory):
         n_left = self.history_size - len(self.history) - self.number_per_generation
         if n_left < 0:
             self.history = self.history[n_left:]
-        best_models = heapq.nlargest(self.number_per_generation, generation, key=lambda x: x["loss"])
+        best_models = heapq.nsmallest(self.number_per_generation, generation, key=lambda x: x["loss"])
         self.history.extend(best_models)
 
 
@@ -146,10 +146,10 @@ class GeneticAlgorithm:
                 model.model_parameters[parameter] = self.bool_sampler()
             elif param_props['type'] == 'int':
                 value = model.model_parameters[parameter]
-                model.model_parameters[parameter] = max(1, self.integer_sampler(value))
+                model.model_parameters[parameter] = max(1, self.integer_sampler(mu=value,sigma=30))
             elif param_props['type'] == 'float':
                 value = model.model_parameters[parameter]
-                model.model_parameters[parameter] = self.float_sampler(value)
+                model.model_parameters[parameter] = self.float_sampler(mu=value,sigma=30)
             else:
                 raise TypeError(f"param {parameter} of unsupported type : {param_props['type']}")
         return model.model_parameters
@@ -198,7 +198,7 @@ class GeneticAlgorithm:
     def test_model(self,closure, model_name, parameters):
         model_instance = self.model_loader.new(self.save_dir,
                                                model_name,
-                                               parameters)
+                                               parameters,reload = True)
         return closure(model_instance)
 
 
