@@ -15,7 +15,7 @@ BEGIN_PROPS
         "type": "float"
     }
 },
-"parameters": {"dim": {"type": "int", "default": "None"}},
+"parameters": {},
 "constraints": [
     ["equality", ["_X_0", "_Y_0"]]
 ]
@@ -38,8 +38,6 @@ class Softmax(torch.nn.Module):
         ):
         super(Softmax, self).__init__()
         self.softmax = torch.nn.Softmax(dim=dim,
-                                device=device,
-                                dtype=dtype
                                 )
 
     def forward(self, X):

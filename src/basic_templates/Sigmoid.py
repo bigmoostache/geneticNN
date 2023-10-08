@@ -6,12 +6,12 @@ BEGIN_PROPS
 "variables": {
     "X": {
         "io" : "in",
-        "dim": "1",
+        "dim": 1,
         "type": "float"
         },
     "Y": {
         "io" : "out",
-        "dim": "1",
+        "dim": 1,
         "type":"float"
         }
     },

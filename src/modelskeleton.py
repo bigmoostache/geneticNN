@@ -218,12 +218,7 @@ class ModelSkeleton:
                 self.outputs[output][0] -= 1
         run_model = self.runs[index]['id']
         del self.runs[index]
-        models_to_remove = []
-        for model in self.submodels:
-            if len(self.get_runs_of_model(model)) == 0:
-                models_to_remove.append(model)
-        for model in models_to_remove:
-            del self.submodels[model]
+        self.remove_unused_submodels()
 
     def add_model(self, model_parameters):
         model_name = model_parameters["name"]
@@ -235,3 +230,11 @@ class ModelSkeleton:
     def add_run(self, run_to_insert):
         self.runs.append(run_to_insert)
         return len(self.runs) - 1
+
+    def remove_unused_submodels(self):
+        models_to_remove = []
+        for model in self.submodels:
+            if len(self.get_runs_of_model(model)) == 0:
+                models_to_remove.append(model)
+        for model in models_to_remove:
+            del self.submodels[model]

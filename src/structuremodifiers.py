@@ -49,7 +49,7 @@ class StructureModifier(ABC):
         input_runs = set([var[0] for var in input_vars.values()])
         output_runs = set([var[0] for var in output_vars if var[0] != 'out'])
         for i, o in itertools.product(input_runs, output_runs):
-            if model_skeleton.is_parent(o, i):
+            if i == o or model_skeleton.is_parent(o, i):
                 raise ValueError(f"inputs of run must be calculated before the outputs: got input {i} and output {o}")
         models_uses = self.check_models_reuse(model)
         if model_name in models_uses.keys():
@@ -99,7 +99,8 @@ class StructureModifier(ABC):
                 new_model_skeleton.outputs[var_to_use] = var_data
             else:
                 new_model_skeleton.runs[run_to_use]['inputs'][var_to_use] = var_data
-
+        new_model_skeleton.reorder_runs()
+        new_model_skeleton.remove_unused_submodels()
         return new_model_skeleton
 
     @abstractmethod
@@ -126,6 +127,8 @@ class StructureModifier(ABC):
         if len(model_skeleton.get_direct_children(run_to_remove)) > 0:
             raise AssertionError(f"not all output links of run {run_to_remove} have been removed!")
         model_skeleton.del_run(run_to_remove)
+        model_skeleton.reorder_runs()
+        model_skeleton.remove_unused_submodels()
         return model_skeleton
 
     def check_models_reuse(self, model):
@@ -325,13 +328,14 @@ class SimpleProbabilisticModifier(StructureModifier):
 
     # override the remove_run from super to give compatibility with fixed_runs:
     def remove_run(self, run_to_remove, replacement_pairings, inplace=False, **kwargs) -> ModelSkeleton:
+        for run in self.fixed_runs:
+            if run > run_to_remove:
+                run -= 1
         model_skeleton = super().remove_run((self.model_skeleton, self.model_props),
                                             run_to_remove,
                                             replacement_pairings,
                                             inplace)
-        for run in self.fixed_runs:
-            if run > run_to_remove:
-                run -= 1
+
         return model_skeleton
 
     def add_submodel(self, submodel_to_add, input_vars, output_vars, inplace=False, **kwargs) -> ModelSkeleton:

@@ -10,7 +10,7 @@ import random
 import math
 from modelskeleton import ModelSkeleton
 from modelproperties import ModelPropertiesMapper
-from typing import Type, Callable, Tuple
+from typing import Type, Callable, Tuple, Optional
 import logging
 import torch
 
@@ -53,18 +53,20 @@ class SimpleGeneticHistory(GeneticHistory):
 class GeneticAlgorithm:
     def __init__(self,
                  starting_models: list[Model],
-                 allowed_list,
+                 allowed_list: list[dict],
                  trials_per_generation: int = 10,
                  number_of_models_to_keep: int = 2,
                  structure_modifier: Type[StructureModifier] = SimpleProbabilisticModifier,
                  model_sampler: Callable[[list[Tuple[int, Model]]], Tuple[int, Model]] = random.choice,
-                 integer_sampler=sample_integer_gaussian,
-                 float_sampler=random.gauss,
+                 integer_sampler: Callable[[int], int] = sample_integer_gaussian,
+                 float_sampler: Callable[[float], float] = random.gauss,
                  history: GeneticHistory = SimpleGeneticHistory(),
-                 base_path=None,
-                 save_dir="genetic",
-                 device='cpu',
-                 dtype=torch.float):
+                 base_path: str = None,
+                 save_dir: str = "genetic",
+                 device: torch.device = 'cpu',
+                 dtype: torch.dtype = torch.float,
+                 ignore_exceptions:bool = True):
+
         self.trials_per_generation = trials_per_generation
         self.number_of_models_to_keep = number_of_models_to_keep
         self.structure_modifier = structure_modifier
@@ -87,9 +89,11 @@ class GeneticAlgorithm:
                 model.model_properties = ModelPropertiesMapper(model.model_skeleton)
             if model.model_parameters is None:
                 model.model_parameters = model.model_properties.get_global_defaults()
-            self.keep_constraints(model)
+            #self.keep_constraints(model)
+        self.ignore_exceptions = ignore_exceptions
+        self.errors = {}
 
-    def resolve_parameters(self, old_model, new_model):
+    def resolve_parameters(self, old_model: Model, new_model: Model):
         old_parameters = old_model.model_parameters
         old_properties = old_model.model_properties
         new_properties = new_model.model_properties
@@ -102,22 +106,39 @@ class GeneticAlgorithm:
 
         return new_parameter
 
-    def keep_constraints(self, model: Model):
-        for run_id in model.model_skeleton.get_direct_children(-1):
+    def keep_constraints(self, model: Model, io_size_constraints):
+
+        input_models = model.model_skeleton.get_direct_children(-1)
+        input_params = {}
+        for run_id in input_models:
             run = model.model_skeleton.runs[run_id]
             for input_var, data in run["inputs"].items():
                 if data[0] == -1:
+
                     model_props = model.model_properties
                     variable_parameter = model_props.get_variable_parameter_name(run['id'], input_var, 0)
+                    global_param = model_props.param_subset[variable_parameter]
+                    input_params[data[1]] = global_param
                     model.model_parameters[
-                        model_props.param_subset[variable_parameter]] = 2
+                        model_props.param_subset[global_param]] = io_size_constraints['inputs'][data[1]]
 
+        output_params = {}
         for var, data in model.model_skeleton.outputs.items():
             model_id = model.model_skeleton.runs[data[0]]['id']
             variable_parameter = model.model_properties.get_variable_parameter_name(model_id, data[1], 0)
-            model.model_parameters[model.model_properties.param_subset[variable_parameter]] = 1
+            global_param = model.model_properties.param_subset[variable_parameter]
+            output_params[data[1]] = global_param
+            model.model_parameters[global_param] = io_size_constraints['outputs'][data[1]]
 
-    def random_update_parameters(self, model):
+        #check input-output compatibility
+        for i,p_i in input_params.items():
+            for o,p_o in output_params.items():
+                if p_i == p_o and io_size_constraints['inputs'][i] != io_size_constraints['outputs'][o]:
+                    return False
+        return True
+
+
+    def random_update_parameters(self, model: Model):
         model_props = model.model_properties.get_high_order_props()
         for parameter in model.model_parameters.keys():
             param_props = model_props["parameters"][parameter]
@@ -125,15 +146,15 @@ class GeneticAlgorithm:
                 model.model_parameters[parameter] = self.bool_sampler()
             elif param_props['type'] == 'int':
                 value = model.model_parameters[parameter]
-                model.model_parameters[parameter] = self.integer_sampler(mu=value)
+                model.model_parameters[parameter] = max(1, self.integer_sampler(value))
             elif param_props['type'] == 'float':
                 value = model.model_parameters[parameter]
-                model.model_parameters[parameter] = self.float_sampler(mu=value)
+                model.model_parameters[parameter] = self.float_sampler(value)
             else:
                 raise TypeError(f"param {parameter} of unsupported type : {param_props['type']}")
         return model.model_parameters
 
-    def generate_candidates(self, generation, number_of_candidates):
+    def generate_candidates(self, generation, number_of_candidates, io_sizes_constraints):
         new_models_list = []
         structure_modifiers = []
         for model_dict in self.bests:
@@ -141,7 +162,8 @@ class GeneticAlgorithm:
             structure_modifiers.append(
                 self.structure_modifier(allowed_models=self.allowed_list, model_skeleton=model.model_skeleton,
                                         model_properties=model.model_properties))
-        for k in range(number_of_candidates):
+        k = 0
+        while len(new_models_list) < number_of_candidates:
             starting_id, starting_model = self.model_sampler([(i, m['model']) for i, m in enumerate(self.bests)])
             is_add_transform = self.bool_sampler()
             # don't remove the only run if there is only one left
@@ -150,16 +172,16 @@ class GeneticAlgorithm:
             if is_add_transform:
                 proposed_submodel, proposed_input, proposed_output = structure_modifiers[
                     starting_id].propose_random_add()
-                new_model_skeleton = structure_modifiers[starting_id].add_submodel(model=[starting_model.model_skeleton,
-                                                                                          starting_model.model_properties],
+                new_model_skeleton = structure_modifiers[starting_id].add_submodel(model=(starting_model.model_skeleton,
+                                                                                          starting_model.model_properties),
                                                                                    submodel_to_add=proposed_submodel,
                                                                                    input_vars=proposed_input,
                                                                                    output_vars=proposed_output,
                                                                                    inplace=False)
             else:
                 proposed_run, proposed_pairings = structure_modifiers[starting_id].propose_random_remove()
-                new_model_skeleton = structure_modifiers[starting_id].remove_run(model=[starting_model.model_skeleton,
-                                                                                        starting_model.model_properties],
+                new_model_skeleton = structure_modifiers[starting_id].remove_run(model=(starting_model.model_skeleton,
+                                                                                        starting_model.model_properties),
                                                                                  run_to_remove=proposed_run,
                                                                                  replacement_pairings=proposed_pairings,
                                                                                  inplace=False)
@@ -167,38 +189,50 @@ class GeneticAlgorithm:
             new_model.model_properties = ModelPropertiesMapper(new_model_skeleton)
             new_model.model_parameters = self.resolve_parameters(starting_model, new_model)
             new_model.model_parameters = self.random_update_parameters(new_model)
-            self.keep_constraints(new_model)
+            if not self.keep_constraints(new_model, io_sizes_constraints):
+                continue
             new_models_list.append(new_model)
+            k+=1
         return new_models_list
 
-    def next_generation(self, closure):
+    def test_model(self,closure, model_name, parameters):
+        model_instance = self.model_loader.new(self.save_dir,
+                                               model_name,
+                                               parameters)
+        return closure(model_instance)
+
+
+    def next_generation(self, closure, io_sizes_constraints, logger = logging):
         logging.info(f"--genetic algorithm generation {self.generation}:--")
         models_to_test = self.generate_candidates(generation=self.generation,
-                                                  number_of_candidates=self.trials_per_generation)
+                                                  number_of_candidates=self.trials_per_generation,
+                                                  io_sizes_constraints=io_sizes_constraints)
         self.current_gen = models_to_test
-        logging.info(f"Testing models:")
+        logger.info(f"Testing models:")
         generation_result = []
         total = len(models_to_test)
         for i, model in enumerate(models_to_test):
-            logging.info(f"\t model {i + 1}/{total} ")
+            logger.info(f"\t model {i + 1}/{total} ")
             Author(model_name=model.model_name,
                    model_skeleton=model.model_skeleton,
                    model_properties=model.model_properties,
-                   save_dir=self.save_dir)
+                   save_dir=self.save_dir, logger = logger)
             parameters = model.model_parameters.copy()
             parameters['device'] = self.device
             parameters['dtype'] = self.dtype
-            loss = 11000
-            try:
-                model_instance = self.model_loader.new(self.save_dir,
-                                                       model.model_name,
-                                                       parameters)
-                loss = closure(model_instance)
-            except:
-                print(f"model had error {i}")
+            if self.ignore_exceptions:
+                loss = 11000
+                try:
+                    loss = self.test_model(closure, model.model_name, parameters)
+                except Exception as e:
+                    print(f"model {i} of generation {self.generation} had an error")
+                    self.errors[f"{self.generation}_{i}"] = e
+            else:
+                loss = self.test_model(closure,model.model_name, parameters)
+
             generation_result.append({"loss": loss, "model": model})
         best_result = heapq.nsmallest(1, iterable=generation_result, key=lambda x: x["loss"])
-        logging.info(f"best model loss : {best_result[0]['loss']}")
+        logger.info(f"best model loss : {best_result[0]['loss']}")
 
         self.bests = heapq.nsmallest(self.number_of_models_to_keep,
                                      iterable=generation_result,

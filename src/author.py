@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 class Author:
 
     def __init__(self, model_name: str, model_skeleton: ModelSkeleton, model_properties: ModelPropertiesMapper = None,
-                 save_dir: str = ""):
+                 save_dir: str = "", logger = logging):
         """
         Constructor for the model generator class.
 
@@ -28,7 +28,7 @@ class Author:
         Note:
         It's assumed that the function is used within a larger framework where the input arguments are prepared and provided.
         """
-        print(f"Building a model {model_name}!")
+        logging.info(f"Building a model {model_name}!")
         self.script_directory = os.path.dirname(os.path.abspath(__file__))
 
         if os.path.isabs(save_dir):
@@ -45,7 +45,7 @@ class Author:
 
         self.model_properties = model_properties
         if self.model_properties is None:
-            print("no model properties given, building default!")
+            logging.info("no model properties given, building default!")
             self.model_properties = ModelPropertiesMapper(model_skeleton)
 
         self.defaults = self.model_properties.get_global_defaults()
