@@ -5,7 +5,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_path = os.path.join(script_dir, '..')
 sys.path.append(project_path)
 
-from src.author import Author
+from src.Base.author import Author
 
 #starts with an MLP
 models_init = { # For now, only the template is required

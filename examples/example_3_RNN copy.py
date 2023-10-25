@@ -1,6 +1,6 @@
 import sys
 sys.path.append("C:/Users/Guillaume Draznieks/Documents/PROJETS/Biological GNN")
-from src.author import Author
+from src.Base.author import Author
 # MLP
 models = { # For now, only the template is required
     'Linear_1' : {"template" : "Linear"}, 

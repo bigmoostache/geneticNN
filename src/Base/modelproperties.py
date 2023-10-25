@@ -1,6 +1,6 @@
 import json
 import os
-from modelskeleton import ModelSkeleton
+from .modelskeleton import ModelSkeleton
 from typing import Iterable, Dict, Any
 from sympy import symbols, Eq, solve, sympify
 import copy
@@ -65,7 +65,7 @@ class ModelProperties:
         script_directory (str): The directory path of the current script.
         props (dict): The properties of the model.
     """
-    script_directory = os.path.dirname(os.path.abspath(__file__))
+    script_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     @staticmethod
     def generate_properties_from_file(model_file):

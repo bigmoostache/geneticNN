@@ -1,7 +1,7 @@
 import sys
 sys.path.append("../src")
-from src.author import Author
-from src.modelskeleton import ModelSkeleton
+from src.Base.author import Author
+from src.Base.modelskeleton import ModelSkeleton
 
 # MLP
 models = {

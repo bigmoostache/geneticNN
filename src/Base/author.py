@@ -1,6 +1,6 @@
 import re, os, json, logging
-from modelskeleton import ModelSkeleton
-from modelproperties import ModelPropertiesMapper, Subsets
+from .modelskeleton import ModelSkeleton
+from .modelproperties import ModelPropertiesMapper
 
 logging.basicConfig(level=logging.INFO)
 
@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 class Author:
 
     def __init__(self, model_name: str, model_skeleton: ModelSkeleton, model_properties: ModelPropertiesMapper = None,
-                 save_dir: str = "", logger = logging):
+                 save_dir: str = "", source_dir="", logger = logging):
         """
         Constructor for the model generator class.
 
@@ -29,12 +29,13 @@ class Author:
         It's assumed that the function is used within a larger framework where the input arguments are prepared and provided.
         """
         logging.info(f"Building a model {model_name}!")
-        self.script_directory = os.path.dirname(os.path.abspath(__file__))
+        self.source_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if source_dir=="" \
+            else source_dir
 
         if os.path.isabs(save_dir):
             self.save_dir = save_dir
         else:
-            self.save_dir = self.script_directory + '/' + save_dir
+            self.save_dir = self.source_directory + '/' + save_dir
 
         self.model_factory_file = 'model_factory'
         self.model_factory_file = os.path.join(self.save_dir, self.model_factory_file)
@@ -122,7 +123,6 @@ class Author:
         """
         # let's write the forward part
         lines = []
-        import json
         for run_id, run in enumerate(self.graph.runs):
             model_id = run['id']
             inputs = run['inputs']
@@ -225,7 +225,7 @@ def get_model(model_name):
     if model_name == "{model_name}":
         return {model_name}.{model_name}()"""
             imports += f'''from . import {model_name}\n'''
-        open(os.path.join(self.save_dir, '__init__.py'), 'w').write(imports)
+        open(os.path.join(self.save_dir, '../__init__.py'), 'w').write(imports)
         open(self.model_factory_file, 'w').write(file)
 
     def add_model_generation_file(self, model_name):

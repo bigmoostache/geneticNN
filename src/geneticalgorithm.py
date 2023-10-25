@@ -1,16 +1,15 @@
 import heapq
 from abc import ABC, abstractmethod
 
-import torch
-
-from author import Author
-from modelloader import ModelLoader
-from structuremodifiers import SimpleProbabilisticModifier, StructureModifier
+from .Base.author import Author
+from .Base.modelloader import ModelLoader
+from .StructureModifiers.SmallUpdateModifier import SmallUpdateModifier
+from .StructureModifiers.StructureModifier import  StructureModifier
 import random
 import math
-from modelskeleton import ModelSkeleton
-from modelproperties import ModelPropertiesMapper
-from typing import Type, Callable, Tuple, Optional
+from .Base.modelskeleton import ModelSkeleton
+from .Base.modelproperties import ModelPropertiesMapper
+from typing import Type, Callable, Tuple
 import logging
 import torch
 
@@ -56,7 +55,7 @@ class GeneticAlgorithm:
                  allowed_list: list[dict],
                  trials_per_generation: int = 10,
                  number_of_models_to_keep: int = 2,
-                 structure_modifier: Type[StructureModifier] = SimpleProbabilisticModifier,
+                 structure_modifier: Type[StructureModifier] = SmallUpdateModifier,
                  model_sampler: Callable[[list[Tuple[int, Model]]], Tuple[int, Model]] = random.choice,
                  integer_sampler: Callable[[int], int] = sample_integer_gaussian,
                  float_sampler: Callable[[float], float] = random.gauss,
@@ -69,7 +68,7 @@ class GeneticAlgorithm:
 
         self.trials_per_generation = trials_per_generation
         self.number_of_models_to_keep = number_of_models_to_keep
-        self.structure_modifier = structure_modifier
+        self.structure_modifier = structure_modifier(allowed_models=allowed_list)
         self.model_sampler = model_sampler
         self.integer_sampler = integer_sampler
         self.float_sampler = float_sampler
@@ -137,7 +136,6 @@ class GeneticAlgorithm:
                     return False
         return True
 
-
     def random_update_parameters(self, model: Model):
         model_props = model.model_properties.get_high_order_props()
         for parameter in model.model_parameters.keys():
@@ -156,12 +154,8 @@ class GeneticAlgorithm:
 
     def generate_candidates(self, generation, number_of_candidates, io_sizes_constraints):
         new_models_list = []
-        structure_modifiers = []
         for model_dict in self.bests:
             model = model_dict["model"]
-            structure_modifiers.append(
-                self.structure_modifier(allowed_models=self.allowed_list, model_skeleton=model.model_skeleton,
-                                        model_properties=model.model_properties))
         k = 0
         while len(new_models_list) < number_of_candidates:
             starting_id, starting_model = self.model_sampler([(i, m['model']) for i, m in enumerate(self.bests)])
@@ -170,21 +164,26 @@ class GeneticAlgorithm:
             if len(starting_model.model_skeleton.runs) == 1:
                 is_add_transform = True
             if is_add_transform:
-                proposed_submodel, proposed_input, proposed_output = structure_modifiers[
-                    starting_id].propose_random_add()
-                new_model_skeleton = structure_modifiers[starting_id].add_submodel(model=(starting_model.model_skeleton,
-                                                                                          starting_model.model_properties),
-                                                                                   submodel_to_add=proposed_submodel,
-                                                                                   input_vars=proposed_input,
-                                                                                   output_vars=proposed_output,
-                                                                                   inplace=False)
+                (proposed_submodel,
+                 proposed_input,
+                 proposed_output) = self.structure_modifier.propose_random_add((starting_model.model_skeleton,
+                                                                                starting_model.model_properties))
+                new_model_skeleton = self.structure_modifier.add_submodel(model=(starting_model.model_skeleton,
+                                                                                starting_model.model_properties),
+                                                                          submodel_to_add=proposed_submodel,
+                                                                          input_vars=proposed_input,
+                                                                          output_vars=proposed_output,
+                                                                          inplace=False)
             else:
-                proposed_run, proposed_pairings = structure_modifiers[starting_id].propose_random_remove()
-                new_model_skeleton = structure_modifiers[starting_id].remove_run(model=(starting_model.model_skeleton,
-                                                                                        starting_model.model_properties),
-                                                                                 run_to_remove=proposed_run,
-                                                                                 replacement_pairings=proposed_pairings,
-                                                                                 inplace=False)
+                (proposed_run,
+                 proposed_pairings) = self.structure_modifier.propose_random_remove((starting_model.model_skeleton,
+                                                                                     starting_model.model_properties))
+                new_model_skeleton = self.structure_modifier.remove_run(model=(starting_model.model_skeleton,
+                                                                               starting_model.model_properties),
+                                                                        run_to_remove=proposed_run,
+                                                                        replacement_pairings=proposed_pairings,
+                                                                        inplace=False)
+
             new_model = Model(model_name=f"model_{generation}_{k}", model_skeleton=new_model_skeleton)
             new_model.model_properties = ModelPropertiesMapper(new_model_skeleton)
             new_model.model_parameters = self.resolve_parameters(starting_model, new_model)
@@ -200,7 +199,6 @@ class GeneticAlgorithm:
                                                model_name,
                                                parameters,reload = True)
         return closure(model_instance)
-
 
     def next_generation(self, closure, io_sizes_constraints, logger = logging):
         logging.info(f"--genetic algorithm generation {self.generation}:--")
@@ -228,7 +226,7 @@ class GeneticAlgorithm:
                     print(f"model {i} of generation {self.generation} had an error")
                     self.errors[f"{self.generation}_{i}"] = e
             else:
-                loss = self.test_model(closure,model.model_name, parameters)
+                loss = self.test_model(closure, model.model_name, parameters)
 
             generation_result.append({"loss": loss, "model": model})
         best_result = heapq.nsmallest(1, iterable=generation_result, key=lambda x: x["loss"])

@@ -1,6 +1,6 @@
 
 from graph import Graph
-from author import Author
+from src.Base.author import Author
 # MLP
 models = { # For now, only the template is required
     'Linear_1' : {"template" : "Linear"}, 

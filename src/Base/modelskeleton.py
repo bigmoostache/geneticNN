@@ -183,8 +183,8 @@ class ModelSkeleton:
         if new_order is None:
             new_order = self.find_runs_order()
         inverter = [-1 for i in range(len(self.runs))]
-        for i in new_order:
-            inverter[i] = new_order.index(i)
+        for index, value in enumerate(new_order):
+            inverter[value] = index
         # print('obtained new runs order: ', new_order)
         # print('inverter: ', inverter)
         self.runs = [self.runs[i] for i in new_order]

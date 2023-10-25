@@ -1,4 +1,4 @@
-import sys, os
+import sys
 
 #script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -9,8 +9,8 @@ import sys, os
 #sys.path.append(project_path)
 
 sys.path.append("../src")
-from src.author import Author
-from src.modelskeleton import ModelSkeleton
+from src.Base.author import Author
+from src.Base.modelskeleton import ModelSkeleton
 
 if __name__ == "__main__":
     # MLP
