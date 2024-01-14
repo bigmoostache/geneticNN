@@ -1,6 +1,7 @@
 import json
 import os
 from .modelskeleton import ModelSkeleton
+from .modeltemplate import ModelTemplate
 from typing import Iterable, Dict, Any
 from sympy import symbols, Eq, solve, sympify
 import copy
@@ -56,57 +57,7 @@ class Subsets:
 
 
 
-class ModelProperties:
-    """A class that represents the properties of a model.
-
-    This class provides methods for generating model properties from a file and accessing them.
-
-    Attributes:
-        script_directory (str): The directory path of the current script.
-        props (dict): The properties of the model.
-    """
-    script_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    @staticmethod
-    def generate_properties_from_file(model_file):
-        props = ModelProperties()
-        props.props = ModelProperties.get_props(model_file)
-
-    @staticmethod
-    def generate_model_properties_from_model_list(model_list):
-        """
-        returns the props of each model of a list or dict of models
-
-        :param model_list: A list of items (model_name, model_data) or
-        a dict with model names as keys and model data as value
-
-        :return: a dict containing the props of the models ordered by model name
-        """
-        if isinstance(model_list, dict):
-            model_list = [(model, model_list[model]) for model in model_list.keys()]
-
-        props = {}
-        for model, data in model_list:
-            model_file = ModelProperties.script_directory + '/' + data["source"] + "/" + data["type"] + ".py"
-            props[model] = ModelProperties.get_props(model_file)
-        return props
-
-
-    @staticmethod
-    def get_props(model_file):
-        """
-        returns the props of a model read in the source file
-        :param model_file: the path to the model file
-        :return: dict containing the props of the model
-        """
-        text = open(model_file).read()
-        text2 = text.split("BEGIN_PROPS")[1]
-        text2 = text2.split("END_PROPS")[0]
-        props = json.loads(text2)
-        return props
-
-
-class ModelPropertiesMapper:
+class ModelParameters:
     """
     Initialize ModelPropertiesMapper with the given parameters.
 
@@ -121,53 +72,33 @@ class ModelPropertiesMapper:
         - "name": the name of the model
 
     """
-    def __init__(self, model_skeleton, detailed_props=True):
+    def __init__(self, model_skeleton: ModelSkeleton):
 
         self.param_subset: Subsets = None
         self.model_skeleton = model_skeleton
-        self.script_directory = os.path.dirname(os.path.abspath(__file__))
         self.props: dict = None
         self.constraints: dict = {"equality": [], "symbolic": [], "parameter": {}}
-        self.variables_props: dict = {}
-        self.sub_props: dict = None
         self.sympy_data: dict = {}
+        self.variables_props = None
 
-        self.generate_properties()
+        self.model_skeleton.build_templates()
+
+        self._find_all_parameters()
         self.generate_constraints()
         self.generate_global_parameters()
         self.solve_symbolic_constraints()
 
     # Solves the constraints on the model and generate the local and global dictionaries of parameters
-    def generate_properties(self):
+    def _find_all_parameters(self):
 
-        # loads the sub-models properties
-        self.sub_props = ModelProperties.generate_model_properties_from_model_list(self.model_skeleton.submodels)
+        parameter_list = []
+        for name, template in self.model_skeleton.submodels.items():
+            template_parameters = template.parameters
+            parameter_list.extend([(name, parameter_name) for parameter_name in template_parameters.keys()])
 
-        # generates properties of inputs
-        variables = {}
-        inputs = self.model_skeleton.inputs
-        for input_var in inputs:
-            related_variables = self.model_skeleton.find_models_variables_connected_to_input(input_var)
-            var_data = {}
-            for run_id, model_var in related_variables:
-                model = self.model_skeleton.runs[run_id]['id']
-                var_props = self.sub_props[model]['variables'][model_var]
-                for key in var_props:
-                    val = var_data.get(key)
-                    if val is None:
-                        var_data[key] = var_props[key]
-                    elif val != var_props[key]:
-                        raise ValueError(f"incompatible properties for input variable {model}:{model_var}")
-            variables[input_var] = var_data
+        self.param_subset = Subsets(parameter_list)
 
-        outputs = self.model_skeleton.outputs
-        for output_var, output_info in outputs.items():
-            output_model = self.model_skeleton.runs[output_info[0]]["id"]
-            output_var_name = output_info[1]
-            variables[output_var] = self.sub_props[output_model]["variables"][output_var_name]
-        self.variables_props = variables
-        # add the parameters corresponding to the variables
-        self.check_and_generate_variables_parameters()
+
 
     def generate_constraints(self):
 
